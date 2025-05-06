@@ -615,3 +615,303 @@
                                     </button>
                                     W {editingUser && (
                                         <button
+                                            type="button"
+                                            onClick={handleCancelEdit}
+                                            className="bg-gray-500 text-white px-4 py-2 rounded"
+                                        >
+                                            Cancelar
+                                        </button>
+                                    )}
+                                </div>
+                            </form>
+                            <h3 className="text-lg font-semibold mt-4">Usuários Cadastrados</h3>
+                            {users.map(user => (
+                                <div key={user.email} className="p-2 border-b flex justify-between items-center">
+                                    <div>
+                                        <p><strong>Email:</strong> ${user.email}</p>
+                                        <p><strong>Nome:</strong> ${user.name}</p>
+                                        <p><strong>Papel:</strong> ${user.role}</p>
+                                        <p><strong>Superior:</strong> ${user.superiorEmail || 'Nenhum'}</p>
+                                        <p><strong>Valor por KM:</strong> R$ ${user.kmRate.toFixed(2)}</p>
+                                    </div>
+                                    <button
+                                        onClick={() => handleEditUser(user)}
+                                        className="bg-yellow-500 text-white px-4 py-2 rounded"
+                                    >
+                                        Editar
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Formulário de Solicitação (Funcionários) */}
+                    {user.role === 'employee' && (
+                        <div className="mb-6 p-4 border rounded-lg">
+                            <h2 className="text-xl font-semibold mb-2">Novo Pedido de Reembolso</h2>
+                            <div className="mb-4">
+                                <h3 className="text-lg font-semibold mb-2">Adicionar Despesa</h3>
+                                <div className="mb-4">
+                                    <label className="block mb-1">Tipo de Despesa:</label>
+                                    <select
+                                        value={currentExpense.type}
+                                        onChange={(e) => setCurrentExpense({ ...currentExpense, type: e.target.value })}
+                                        className="border p-2 rounded w-full"
+                                    >
+                                        <option value="kilometragem">Kilometragem</option>
+                                        <option value="alimentacao">Alimentação</option>
+                                        <option value="hospedagem">Hospedagem</option>
+                                        <option value="outra">Outra</option>
+                                    </select>
+                                </div>
+                                ${currentExpense.type === 'kilometragem' ? (
+                                    `<div className="mb-4">
+                                        <label className="block mb-1">Quilômetros:</label>
+                                        <input
+                                            type="number"
+                                            value={currentExpense.quantity}
+                                            onChange={(e) => {
+                                                const value = parseFloat(e.target.value);
+                                                if (value <= 0) {
+                                                    alert('Quilômetros devem ser maiores que 0.');
+                                                    return;
+                                                }
+                                                if (value > 10000) {
+                                                    alert('Quilômetros não podem exceder 10.000.');
+                                                    return;
+                                                }
+                                                setCurrentExpense({ ...currentExpense, quantity: value });
+                                            }}
+                                            className="border p-2 rounded w-full"
+                                            required
+                                        />
+                                        <p className="text-sm text-gray-600">
+                                            Valor Calculado: R$ ${calculateKilometragemValue(currentExpense.quantity).toFixed(2)}
+                                        </p>
+                                    </div>`
+                                ) : (
+                                    `<div className="mb-4">
+                                        <label className="block mb-1">Valor (R$):</label>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            value={currentExpense.value}
+                                            onChange={(e) => {
+                                                const value = parseFloat(e.target.value);
+                                                if (value <= 0) {
+                                                    alert('Valor deve ser maior que 0.');
+                                                    return;
+                                                }
+                                                if (value > 50000) {
+                                                    alert('Valor não pode exceder R$ 50.000,00.');
+                                                    return;
+                                                }
+                                                setCurrentExpense({ ...currentExpense, value: value });
+                                            }}
+                                            className="border p-2 rounded w-full"
+                                            required
+                                        />
+                                    </div>`
+                                )}
+                                <div className="mb-4">
+                                    <label className="block mb-1">Descrição:</label>
+                                    <textarea
+                                        value={currentExpense.description}
+                                        onChange={(e) => setCurrentExpense({ ...currentExpense, description: e.target.value })}
+                                        className="border p-2 rounded w-full"
+                                        required
+                                    />
+                                </div>
+                                <div className="mb-4">
+                                    <label className="block mb-1">Anexar Fatura:</label>
+                                    <input
+                                        type="file"
+                                        accept="image/jpeg,image/png,application/pdf"
+                                        onChange={(e) => {
+                                            const file = e.target.files[0];
+                                            if (file) {
+                                                const maxSize = 5 * 1024 * 1024; // 5 MB em bytes
+                                                if (file.size > maxSize) {
+                                                    alert('O arquivo deve ter no máximo 5 MB.');
+                                                    return;
+                                                }
+                                                if (!['image/jpeg', 'image/png', 'application/pdf'].includes(file.type)) {
+                                                    alert('Apenas arquivos JPG, PNG ou PDF são permitidos.');
+                                                    return;
+                                                }
+                                                setCurrentExpense({ ...currentExpense, file: file });
+                                            }
+                                        }}
+                                        className="border p-2 rounded w-full"
+                                    />
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={handleAddExpense}
+                                    className="bg-green-500 text-white px-4 py-2 rounded mb-4"
+                                >
+                                    Adicionar Despesa ao Pedido
+                                </button>
+                            </div>
+                            <div className="mb-4">
+                                <h3 className="text-lg font-semibold mb-2">Despesas no Pedido</h3>
+                                ${expenses.map((exp, index) => (
+                                    `<div key=${index} className="p-2 border-b">
+                                        <p><strong>Tipo:</strong> ${exp.type}</p>
+                                        ${exp.type === 'kilometragem' ? `<p><strong>Quilômetros:</strong> ${exp.quantity}</p>` : ''}
+                                        <p><strong>Valor:</strong> R$ ${exp.value.toFixed(2)}</p>
+                                        <p><strong>Descrição:</strong> ${exp.description}</p>
+                                        ${exp.file ? `<p><strong>Fatura:</strong> <a href="${exp.file}" target="_blank">Ver Imagem</a></p>` : ''}
+                                    </div>`
+                                )).join('')}
+                            </div>
+                            <div className="flex space-x-2">
+                                <button
+                                    onClick={handleSubmit}
+                                    className="bg-blue-500 text-white px-4 py-2 rounded"
+                                >
+                                    Enviar Pedido de Reembolso
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setExpenses([]);
+                                        setCurrentExpense({ type: 'kilometragem', quantity: 0, value: 0, description: '', file: null });
+                                    }}
+                                    className="bg-gray-500 text-white px-4 py-2 rounded"
+                                >
+                                    Limpar Formulário
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Aprovações (Gestores) */}
+                    ${user.role === 'manager' && (
+                        `<div className="mb-6 p-4 border rounded-lg">
+                            <h2 className="text-xl font-semibold mb-2">Aprovações Pendentes</h2>
+                            ${getVisibleRequests().map(req => (
+                                `<div key=${req.id} className="p-4 border-b">
+                                    <p><strong>Data:</strong> ${new Date(req.createdAt).toLocaleString()}</p>
+                                    <p><strong>Solicitante:</strong> ${req.userEmail}</p>
+                                    <p><strong>Total:</strong> R$ ${req.totalValue.toFixed(2)}</p>
+                                    <h3 className="font-semibold mt-2">Despesas:</h3>
+                                    ${req.expenses.map((exp, index) => (
+                                        `<div key=${index} className="ml-4 mt-2">
+                                            <p><strong>Tipo:</strong> ${exp.type}</p>
+                                            ${exp.type === 'kilometragem' ? `<p><strong>Quilômetros:</strong> ${exp.quantity}</p>` : ''}
+                                            <p><strong>Valor:</strong> R$ ${exp.value.toFixed(2)}</p>
+                                            <p><strong>Descrição:</strong> ${exp.description}</p>
+                                            ${exp.file ? `<p><strong>Fatura:</strong> <a href="${exp.file}" target="_blank">Ver Imagem</a></p>` : ''}
+                                        </div>`
+                                    )).join('')}
+                                    <div className="mt-2">
+                                        <textarea
+                                            placeholder="Comentários (opcional)"
+                                            onChange={(e) => {
+                                                const updatedRequests = requests.map(r => 
+                                                    r.id === req.id ? { ...r, comments: e.target.value } : r
+                                                );
+                                                setRequests(updatedRequests);
+                                            }}
+                                            className="border p-2 rounded w-full mb-2"
+                                        />
+                                        <button
+                                            onClick={() => handleApproval(req.id, 'approve')}
+                                            className="bg-green-500 text-white px-4 py-2 rounded mr-2"
+                                        >
+                                            Aprovar
+                                        </button>
+                                        <button
+                                            onClick={() => handleApproval(req.id, 'reject', req.comments)}
+                                            className="bg-red-500 text-white px-4 py-2 rounded"
+                                        >
+                                            Rejeitar
+                                        </button>
+                                    </div>
+                                </div>`
+                            )).join('')}
+                        </div>`
+                    )}
+
+                    {/* Financeiro */}
+                    ${user.role === 'finance' && (
+                        `<div className="mb-6 p-4 border rounded-lg">
+                            <h2 className="text-xl font-semibold mb-2">Solicitações Aprovadas</h2>
+                            ${getVisibleRequests().map(req => (
+                                `<div key=${req.id} className="p-4 border-b">
+                                    <p><strong>Data:</strong> ${new Date(req.createdAt).toLocaleString()}</p>
+                                    <p><strong>Solicitante:</strong> ${req.userEmail}</p>
+                                    <p><strong>Aprovador:</strong> ${req.approvedBy || 'N/A'}</p>
+                                    <p><strong>Total:</strong> R$ ${req.totalValue.toFixed(2)}</p>
+                                    <h3 className="font-semibold mt-2">Despesas:</h3>
+                                    ${req.expenses.map((exp, index) => (
+                                        `<div key=${index} className="ml-4 mt-2">
+                                            <p><strong>Tipo:</strong> ${exp.type}</p>
+                                            ${exp.type === 'kilometragem' ? `<p><strong>Quilômetros:</strong> ${exp.quantity}</p>` : ''}
+                                            <p><strong>Valor:</strong> R$ ${exp.value.toFixed(2)}</p>
+                                            <p><strong>Descrição:</strong> ${exp.description}</p>
+                                            ${exp.file ? `<p><strong>Fatura:</strong> <a href="${exp.file}" target="_blank">Ver Imagem</a></p>` : ''}
+                                        </div>`
+                                    )).join('')}
+                                    <button
+                                        onClick={() => handlePayment(req.id)}
+                                        className="bg-blue-500 text-white px-4 py-2 rounded mt-2"
+                                    >
+                                        Marcar como Pago
+                                    </button>
+                                </div>`
+                            )).join('')}
+                        </div>`
+                    )}
+
+                    {/* Relatórios */}
+                    <div className="p-4 border rounded-lg">
+                        <div className="mb-4">
+                            <h2 className="text-xl font-semibold">BRACHMANN WORLDWIDE LOGISTICS LTDA</h2>
+                            <h3 className="text-lg font-semibold mt-2">Relatórios</h3>
+                        </div>
+                        <div className="mb-4">
+                            <h4 className="font-semibold">Solicitadas</h4>
+                            <p>Total: ${getVisibleRequests().filter(req => req.status === 'pending').length}</p>
+                        </div>
+                        <div className="mb-4">
+                            <h4 className="font-semibold">Aprovadas e Pagas</h4>
+                            <p>Total: ${getVisibleRequests().filter(req => req.status === 'paid').length}</p>
+                        </div>
+                        <div className="mb-4">
+                            <h4 className="font-semibold">Em Aberto (Aprovadas, Não Pagas)</h4>
+                            <p>Total: ${getVisibleRequests().filter(req => req.status === 'approved').length}</p>
+                        </div>
+                        <div>
+                            <h4 className="font-semibold">Seus Pedidos de Reembolso</h4>
+                            ${getVisibleRequests().map(req => (
+                                `<div key=${req.id} className="p-2 border-b">
+                                    <p><strong>ID:</strong> ${req.id}</p>
+                                    <p><strong>Data:</strong> ${new Date(req.createdAt).toLocaleString()}</p>
+                                    <p><strong>Aprovador:</strong> ${req.approvedBy || 'N/A'}</p>
+                                    <p><strong>Total:</strong> R$ ${req.totalValue.toFixed(2)}</p>
+                                    <p><strong>Status:</strong> ${req.status}</p>
+                                    ${req.comments ? `<p><strong>Comentários:</strong> ${req.comments}</p>` : ''}
+                                    <h5 className="font-semibold mt-2">Despesas:</h5>
+                                    ${req.expenses.map((exp, index) => (
+                                        `<div key=${index} className="ml-4">
+                                            <p><strong>Tipo:</strong> ${exp.type}</p>
+                                            ${exp.type === 'kilometragem' ? `<p><strong>Quilômetros:</strong> ${exp.quantity}</p>` : ''}
+                                            <p><strong>Valor:</strong> R$ ${exp.value.toFixed(2)}</p>
+                                            <p><strong>Descrição:</strong> ${exp.description}</p>
+                                            ${exp.file ? `<p><strong>Fatura:</strong> <a href="${exp.file}" target="_blank">Ver Imagem</a></p>` : ''}
+                                        </div>`
+                                    )).join('')}
+                                </div>`
+                            )).join('')}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        ReactDOM.render(<ReimbursementApp />, document.getElementById('root'));
+    </script>
+</body>
+</html>
