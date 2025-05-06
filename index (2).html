@@ -1,0 +1,666 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Brachmann Reimbursement App</title>
+    <script src="https://unpkg.com/react@17/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+    <script src="https://statics.teams.cdn.office.net/sdk/v1.11.0/js/MicrosoftTeams.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        const ReimbursementApp = () => {
+            const [currentUserEmail, setCurrentUserEmail] = useState('');
+            const [userRole, setUserRole] = useState(null);
+            const [users, setUsers] = useState(() => {
+                const savedUsers = JSON.parse(localStorage.getItem('users')) || [];
+                // Garante que o master esteja sempre na lista
+                if (!savedUsers.find(u => u.email.toLowerCase() === "tmurao@brachmannlogistics.com")) {
+                    savedUsers.push({
+                        email: "tmurao@brachmannlogistics.com",
+                        name: "Tacito Murao",
+                        role: "master",
+                        superiorEmail: "",
+                        kmRate: 0.50
+                    });
+                }
+                return savedUsers;
+            });
+            const [requests, setRequests] = useState(JSON.parse(localStorage.getItem('requests')) || []);
+            const [newUser, setNewUser] = useState({
+                email: '',
+                name: '',
+                role: 'employee',
+                superiorEmail: '',
+                kmRate: 0.50
+            });
+            const [editingUser, setEditingUser] = useState(null);
+            const [expenses, setExpenses] = useState([]);
+            const [currentExpense, setCurrentExpense] = useState({
+                type: 'kilometragem',
+                quantity: 0,
+                value: 0,
+                description: '',
+                file: null
+            });
+            const [notifications, setNotifications] = useState([]);
+            const [isTeams, setIsTeams] = useState(false);
+
+            // Função para inicializar o email do usuário
+            useEffect(() => {
+                const initializeUser = () => {
+                    // Verifica se estamos no Teams
+                    if (typeof microsoftTeams !== 'undefined') {
+                        microsoftTeams.initialize(() => {
+                            setIsTeams(true);
+                            microsoftTeams.getContext((context) => {
+                                const email = context.userPrincipalName ? context.userPrincipalName.toLowerCase() : "tmurao@brachmannlogistics.com";
+                                setCurrentUserEmail(email);
+                            });
+                        }, 5000); // Timeout de 5 segundos
+                    } else {
+                        // Fallback para teste local: usa o email do master
+                        setIsTeams(false);
+                        setCurrentUserEmail("tmurao@brachmannlogistics.com");
+                    }
+                };
+
+                // Executa a inicialização
+                initializeUser();
+
+                // Fallback caso o Teams SDK não responda em 5 segundos
+                const timeout = setTimeout(() => {
+                    if (!currentUserEmail) {
+                        setIsTeams(false);
+                        setCurrentUserEmail("tmurao@brachmannlogistics.com");
+                    }
+                }, 5000);
+
+                return () => clearTimeout(timeout);
+            }, []);
+
+            // Determina o papel do usuário com base no email
+            useEffect(() => {
+                if (currentUserEmail) {
+                    const user = users.find(u => u.email.toLowerCase() === currentUserEmail);
+                    if (user) {
+                        setUserRole(user.role);
+                    } else {
+                        setUserRole(null);
+                    }
+                }
+            }, [currentUserEmail, users]);
+
+            // Salva usuários e solicitações no localStorage
+            useEffect(() => {
+                localStorage.setItem('users', JSON.stringify(users));
+                localStorage.setItem('requests', JSON.stringify(requests));
+            }, [users, requests]);
+
+            // Calcula o valor da kilometragem com base no kmRate do usuário
+            const calculateKilometragemValue = (quantity) => {
+                const user = users.find(u => u.email === currentUserEmail);
+                return user ? (user.kmRate * quantity) : 0;
+            };
+
+            // Adiciona uma despesa à lista de despesas do pedido
+            const handleAddExpense = () => {
+                const expense = {
+                    type: currentExpense.type,
+                    quantity: currentExpense.type === 'kilometragem' ? currentExpense.quantity : 0,
+                    value: currentExpense.type === 'kilometragem' ? calculateKilometragemValue(currentExpense.quantity) : currentExpense.value,
+                    description: currentExpense.description,
+                    file: currentExpense.file ? URL.createObjectURL(currentExpense.file) : null
+                };
+                setExpenses([...expenses, expense]);
+                setCurrentExpense({ type: 'kilometragem', quantity: 0, value: 0, description: '', file: null });
+            };
+
+            // Manipula o envio do pedido de reembolso
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                if (expenses.length === 0) {
+                    alert('Adicione pelo menos uma despesa ao pedido!');
+                    return;
+                }
+                const user = users.find(u => u.email === currentUserEmail);
+                const newRequest = {
+                    id: Date.now(),
+                    userEmail: currentUserEmail,
+                    expenses: expenses,
+                    totalValue: expenses.reduce((sum, exp) => sum + exp.value, 0),
+                    status: 'pending',
+                    comments: ''
+                };
+                setRequests([...requests, newRequest]);
+                setNotifications([...notifications, `Email enviado para ${user.superiorEmail}: Nova solicitação de reembolso criada por ${currentUserEmail}`]);
+                setExpenses([]);
+                setCurrentExpense({ type: 'kilometragem', quantity: 0, value: 0, description: '', file: null });
+                alert('Solicitação enviada para aprovação!');
+            };
+
+            // Manipula o cadastro de novos usuários (apenas para o master)
+            const handleUserSubmit = (e) => {
+                e.preventDefault();
+                // Verifica se o email já existe
+                if (users.find(u => u.email.toLowerCase() === newUser.email.toLowerCase())) {
+                    alert('Este email já está cadastrado!');
+                    return;
+                }
+                const newUserData = {
+                    email: newUser.email.toLowerCase(),
+                    name: newUser.name,
+                    role: newUser.role,
+                    superiorEmail: newUser.superiorEmail.toLowerCase(),
+                    kmRate: parseFloat(newUser.kmRate) || 0.50
+                };
+                setUsers([...users, newUserData]);
+                setNewUser({ email: '', name: '', role: 'employee', superiorEmail: '', kmRate: 0.50 });
+                alert('Usuário cadastrado com sucesso!');
+            };
+
+            // Manipula a edição de um usuário existente
+            const handleEditUser = (user) => {
+                setEditingUser(user);
+                setNewUser({
+                    email: user.email,
+                    name: user.name,
+                    role: user.role,
+                    superiorEmail: user.superiorEmail,
+                    kmRate: user.kmRate
+                });
+            };
+
+            // Manipula o salvamento das alterações de um usuário
+            const handleSaveEdit = (e) => {
+                e.preventDefault();
+                setUsers(users.map(u => {
+                    if (u.email.toLowerCase() === editingUser.email.toLowerCase()) {
+                        return {
+                            email: newUser.email.toLowerCase(),
+                            name: newUser.name,
+                            role: newUser.role,
+                            superiorEmail: newUser.superiorEmail.toLowerCase(),
+                            kmRate: parseFloat(newUser.kmRate) || 0.50
+                        };
+                    }
+                    return u;
+                }));
+                setEditingUser(null);
+                setNewUser({ email: '', name: '', role: 'employee', superiorEmail: '', kmRate: 0.50 });
+                alert('Usuário atualizado com sucesso!');
+            };
+
+            // Cancela a edição
+            const handleCancelEdit = () => {
+                setEditingUser(null);
+                setNewUser({ email: '', name: '', role: 'employee', superiorEmail: '', kmRate: 0.50 });
+            };
+
+            // Aprova ou rejeita uma solicitação
+            const handleApproval = (id, action, comments) => {
+                const request = requests.find(req => req.id === id);
+                const user = users.find(u => u.email === request.userEmail);
+                setRequests(requests.map(req => {
+                    if (req.id === id) {
+                        return {
+                            ...req,
+                            status: action === 'approve' ? 'approved' : 'rejected',
+                            comments: comments || req.comments
+                        };
+                    }
+                    return req;
+                }));
+                if (action === 'approve') {
+                    setNotifications([...notifications, `Email enviado para financeiro@brachmannlogistics.com: Solicitação aprovada para ${request.userEmail}`]);
+                    alert('Solicitação aprovada! Enviada para o financeiro.');
+                } else {
+                    setNotifications([...notifications, `Email enviado para ${request.userEmail}: Solicitação rejeitada.`]);
+                    alert('Solicitação rejeitada.');
+                }
+            };
+
+            // Marca como pago pelo financeiro
+            const handlePayment = (id) => {
+                const request = requests.find(req => req.id === id);
+                setRequests(requests.map(req => {
+                    if (req.id === id) {
+                        return { ...req, status: 'paid' };
+                    }
+                    return req;
+                }));
+                setNotifications([...notifications, `Email enviado para ${request.userEmail}: Solicitação marcada como paga.`]);
+                alert('Solicitação marcada como paga!');
+            };
+
+            // Obtém o superior do usuário atual
+            const getUserSuperior = (userEmail) => {
+                const user = users.find(u => u.email === userEmail);
+                return user ? user.superiorEmail : null;
+            };
+
+            // Filtra solicitações visíveis para o usuário atual
+            const getVisibleRequests = () => {
+                if (!currentUserEmail || !userRole) return [];
+                if (userRole === 'employee') {
+                    return requests.filter(req => req.userEmail === currentUserEmail);
+                } else if (userRole === 'manager') {
+                    return requests.filter(req => getUserSuperior(req.userEmail) === currentUserEmail && req.status === 'pending');
+                } else if (userRole === 'finance') {
+                    return requests.filter(req => req.status === 'approved');
+                } else if (userRole === 'master') {
+                    return requests; // Master vê todas as solicitações
+                }
+                return [];
+            };
+
+            // Se o usuário não estiver cadastrado, exibe uma mensagem
+            if (!currentUserEmail) {
+                return <div className="p-4">Inicializando aplicativo...</div>;
+            }
+
+            if (!userRole) {
+                return (
+                    <div className="p-4 max-w-md mx-auto">
+                        <h1 className="text-2xl font-bold mb-4">Brachmann Reimbursement App</h1>
+                        <p className="text-red-500">
+                            Seu email ({currentUserEmail}) não está cadastrado. Por favor, entre em contato com o administrador (tmurao@brachmannlogistics.com) para ser cadastrado.
+                        </p>
+                    </div>
+                );
+            }
+
+            const user = users.find(u => u.email === currentUserEmail);
+
+            return (
+                <div className="p-4 max-w-4xl mx-auto">
+                    <h1 className="text-2xl font-bold mb-4">Brachmann Reimbursement App</h1>
+                    <p className="mb-4">Você está logado como: <strong>{user.role}</strong> (Email: {currentUserEmail})</p>
+                    <p className="mb-4 text-sm text-gray-500">
+                        {isTeams ? 'Rodando no Microsoft Teams' : 'Rodando localmente (simulação)'}
+                    </p>
+
+                    {/* Notificações Simuladas */}
+                    {notifications.length > 0 && (
+                        <div className="mb-4 p-4 border rounded-lg bg-yellow-100">
+                            <h3 className="text-lg font-semibold mb-2">Notificações (Simuladas)</h3>
+                            {notifications.map((notif, index) => (
+                                <p key={index} className="text-sm">{notif}</p>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Cadastro de Usuários (apenas para o master) */}
+                    {user.role === 'master' && (
+                        <div className="mb-6 p-4 border rounded-lg">
+                            <h2 className="text-xl font-semibold mb-2">{editingUser ? 'Editar Usuário' : 'Cadastrar Novo Usuário'}</h2>
+                            <form onSubmit={editingUser ? handleSaveEdit : handleUserSubmit}>
+                                <div className="mb-4">
+                                    <label className="block mb-1">Email:</label>
+                                    <input
+                                        type="email"
+                                        value={newUser.email}
+                                        onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                                        className="border p-2 rounded w-full"
+                                        disabled={!!editingUser} // Desabilita edição do email
+                                        required
+                                    />
+                                </div>
+                                <div className="mb-4">
+                                    <label className="block mb-1">Nome:</label>
+                                    <input
+                                        type="text"
+                                        value={newUser.name}
+                                        onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
+                                        className="border p-2 rounded w-full"
+                                        required
+                                    />
+                                </div>
+                                <div className="mb-4">
+                                    <label className="block mb-1">Papel:</label>
+                                    <select
+                                        value={newUser.role}
+                                        onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
+                                        className="border p-2 rounded w-full"
+                                    >
+                                        <option value="employee">Funcionário</option>
+                                        <option value="manager">Gestor</option>
+                                        <option value="finance">Financeiro</option>
+                                        <option value="master">Master</option>
+                                    </select>
+                                </div>
+                                <div className="mb-4">
+                                    <label className="block mb-1">Superior (Email):</label>
+                                    <select
+                                        value={newUser.superiorEmail}
+                                        onChange={(e) => setNewUser({ ...newUser, superiorEmail: e.target.value })}
+                                        className="border p-2 rounded w-full"
+                                    >
+                                        <option value="">Nenhum</option>
+                                        {users.filter(u => u.role === 'manager').map(u => (
+                                            <option key={u.email} value={u.email}>{u.name} ({u.email})</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="mb-4">
+                                    <label className="block mb-1">Valor por KM (R$):</label>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        value={newUser.kmRate}
+                                        onChange={(e) => setNewUser({ ...newUser, kmRate: e.target.value })}
+                                        className="border p-2 rounded w-full"
+                                        required
+                                    />
+                                </div>
+                                <div className="flex space-x-2">
+                                    <button type="submit" className="bg-blue-500 text-white px-4 py-2 rounded">
+                                        {editingUser ? 'Salvar Alterações' : 'Cadastrar Usuário'}
+                                    </button>
+                                    {editingUser && (
+                                        <button
+                                            type="button"
+                                            onClick={handleCancelEdit}
+                                            className="bg-gray-500 text-white px-4 py-2 rounded"
+                                        >
+                                            Cancelar
+                                        </button>
+                                    )}
+                                </div>
+                            </form>
+                            <h3 className="text-lg font-semibold mt-4">Usuários Cadastrados</h3>
+                            {users.map(user => (
+                                <div key={user.email} className="p-2 border-b flex justify-between items-center">
+                                    <div>
+                                        <p><strong>Email:</strong> {user.email}</p>
+                                        <p><strong>Nome:</strong> {user.name}</p>
+                                        <p><strong>Papel:</strong> {user.role}</p>
+                                        <p><strong>Superior:</strong> {user.superiorEmail || 'Nenhum'}</p>
+                                        <p><strong>Valor por KM:</strong> R$ {user.kmRate.toFixed(2)}</p>
+                                    </div>
+                                    <button
+                                        onClick={() => handleEditUser(user)}
+                                        className="bg-yellow-500 text-white px-4 py-2 rounded"
+                                    >
+                                        Editar
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Formulário de Solicitação (Funcionários) */}
+                    {user.role === 'employee' && (
+                        <div className="mb-6 p-4 border rounded-lg">
+                            <h2 className="text-xl font-semibold mb-2">Novo Pedido de Reembolso</h2>
+                            <div className="mb-4">
+                                <h3 className="text-lg font-semibold mb-2">Adicionar Despesa</h3>
+                                <div className="mb-4">
+                                    <label className="block mb-1">Tipo de Despesa:</label>
+                                    <select
+                                        value={currentExpense.type}
+                                        onChange={(e) => setCurrentExpense({ ...currentExpense, type: e.target.value })}
+                                        className="border p-2 rounded w-full"
+                                    >
+                                        <option value="kilometragem">Kilometragem</option>
+                                        <option value="alimentacao">Alimentação</option>
+                                        <option value="hospedagem">Hospedagem</option>
+                                        <option value="outra">Outra</option>
+                                    </select>
+                                </div>
+                                {currentExpense.type === 'kilometragem' ? (
+                                    <div className="mb-4">
+                                        <label className="block mb-1">Quilômetros:</label>
+                                        <input
+                                            type="number"
+                                            value={currentExpense.quantity}
+                                            onChange={(e) => setCurrentExpense({ ...currentExpense, quantity: e.target.value })}
+                                            className="border p-2 rounded w-full"
+                                            required
+                                        />
+                                        <p className="text-sm text-gray-600">
+                                            Valor Calculado: R$ {calculateKilometragemValue(currentExpense.quantity).toFixed(2)}
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div className="mb-4">
+                                        <label className="block mb-1">Valor (R$):</label>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            value={currentExpense.value}
+                                            onChange={(e) => setCurrentExpense({ ...currentExpense, value: e.target.value })}
+                                            className="border p-2 rounded w-full"
+                                            required
+                                        />
+                                    </div>
+                                )}
+                                <div className="mb-4">
+                                    <label className="block mb-1">Descrição:</label>
+                                    <textarea
+                                        value={currentExpense.description}
+                                        onChange={(e) => setCurrentExpense({ ...currentExpense, description: e.target.value })}
+                                        className="border p-2 rounded w-full"
+                                        required
+                                    />
+                                </div>
+                                <div className="mb-4">
+                                    <label className="block mb-1">Anexar Fatura:</label>
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        onChange={(e) => setCurrentExpense({ ...currentExpense, file: e.target.files[0] })}
+                                        className="border p-2 rounded w-full"
+                                    />
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={handleAddExpense}
+                                    className="bg-green-500 text-white px-4 py-2 rounded mb-4"
+                                >
+                                    Adicionar Despesa ao Pedido
+                                </button>
+                            </div>
+                            <div className="mb-4">
+                                <h3 className="text-lg font-semibold mb-2">Despesas no Pedido</h3>
+                                {expenses.map((exp, index) => (
+                                    <div key={index} className="p-2 border-b">
+                                        <p><strong>Tipo:</strong> {exp.type}</p>
+                                        {exp.type === 'kilometragem' ? (
+                                            <p><strong>Quilômetros:</strong> {exp.quantity}</p>
+                                        ) : null}
+                                        <p><strong>Valor:</strong> R$ {exp.value.toFixed(2)}</p>
+                                        <p><strong>Descrição:</strong> {exp.description}</p>
+                                        {exp.file && (
+                                            <p><strong>Fatura:</strong> <a href={exp.file} target="_blank">Ver Imagem</a></p>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                            <button
+                                onClick={handleSubmit}
+                                className="bg-blue-500 text-white px-4 py-2 rounded"
+                            >
+                                Enviar Pedido de Reembolso
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Aprovações (Gestores) */}
+                    {user.role === 'manager' && (
+                        <div className="mb-6 p-4 border rounded-lg">
+                            <h2 className="text-xl font-semibold mb-2">Aprovações Pendentes</h2>
+                            {getVisibleRequests().map(req => (
+                                <div key={req.id} className="p-4 border-b">
+                                    <p><strong>Solicitante:</strong> {req.userEmail}</p>
+                                    <p><strong>Total:</strong> R$ {req.totalValue.toFixed(2)}</p>
+                                    <h3 className="font-semibold mt-2">Despesas:</h3>
+                                    {req.expenses.map((exp, index) => (
+                                        <div key={index} className="ml-4 mt-2">
+                                            <p><strong>Tipo:</strong> {exp.type}</p>
+                                            {exp.type === 'kilometragem' ? (
+                                                <p><strong>Quilômetros:</strong> {exp.quantity}</p>
+                                            ) : null}
+                                            <p><strong>Valor:</strong> R$ {exp.value.toFixed(2)}</p>
+                                            <p><strong>Descrição:</strong> {exp.description}</p>
+                                            {exp.file && (
+                                                <p><strong>Fatura:</strong> <a href={exp.file} target="_blank">Ver Imagem</a></p>
+                                            )}
+                                        </div>
+                                    ))}
+                                    <div className="mt-2">
+                                        <textarea
+                                            placeholder="Comentários (opcional)"
+                                            onChange={(e) => {
+                                                const updatedRequests = requests.map(r => 
+                                                    r.id === req.id ? { ...r, comments: e.target.value } : r
+                                                );
+                                                setRequests(updatedRequests);
+                                            }}
+                                            className="border p-2 rounded w-full mb-2"
+                                        />
+                                        <button
+                                            onClick={() => handleApproval(req.id, 'approve')}
+                                            className="bg-green-500 text-white px-4 py-2 rounded mr-2"
+                                        >
+                                            Aprovar
+                                        </button>
+                                        <button
+                                            onClick={() => handleApproval(req.id, 'reject', req.comments)}
+                                            className="bg-red-500 text-white px-4 py-2 rounded"
+                                        >
+                                            Rejeitar
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Financeiro */}
+                    {user.role === 'finance' && (
+                        <div className="mb-6 p-4 border rounded-lg">
+                            <h2 className="text-xl font-semibold mb-2">Solicitações Aprovadas</h2>
+                            {getVisibleRequests().map(req => (
+                                <div key={req.id} className="p-4 border-b">
+                                    <p><strong>Solicitante:</strong> {req.userEmail}</p>
+                                    <p><strong>Total:</strong> R$ {req.totalValue.toFixed(2)}</p>
+                                    <h3 className="font-semibold mt-2">Despesas:</h3>
+                                    {req.expenses.map((exp, index) => (
+                                        <div key={index} className="ml-4 mt-2">
+                                            <p><strong>Tipo:</strong> {exp.type}</p>
+                                            {exp.type === 'kilometragem' ? (
+                                                <p><strong>Quilômetros:</strong> {exp.quantity}</p>
+                                            ) : null}
+                                            <p><strong>Valor:</strong> R$ {exp.value.toFixed(2)}</p>
+                                            <p><strong>Descrição:</strong> {exp.description}</p>
+                                            {exp.file && (
+                                                <p><strong>Fatura:</strong> <a href={exp.file} target="_blank">Ver Imagem</a></p>
+                                            )}
+                                        </div>
+                                    ))}
+                                    <button
+                                        onClick={() => handlePayment(req.id)}
+                                        className="bg-blue-500 text-white px-4 py-2 rounded mt-2"
+                                    >
+                                        Marcar como Pago
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Relatórios */}
+                    <div className="p-4 border rounded-lg">
+                        <h2 className="text-xl font-semibold mb-2">Relatórios</h2>
+                        <div className="mb-4">
+                            <h3 className="font-semibold">Solicitadas</h3>
+                            <p>Total: {getVisibleRequests().filter(req => req.status === 'pending').length}</p>
+                        </div>
+                        <div className="mb-4">
+                            <h3 className="font-semibold">Aprovadas e Pagas</h3>
+                            <p>Total: {getVisibleRequests().filter(req => req.status === 'paid').length}</p>
+                        </div>
+                        <div className="mb-4">
+                            <h3 className="font-semibold">Em Aberto (Aprovadas, Não Pagas)</h3>
+                            <p>Total: {getVisibleRequests().filter(req => req.status === 'approved').length}</p>
+                        </div>
+                        <div>
+                            <h3 className="font-semibold">Seus Pedidos de Reembolso</h3>
+                            {getVisibleRequests().map(req => (
+                                <div key={req.id} className="p-2 border-b">
+                                    <p><strong>ID:</strong> {req.id}</p>
+                                    <p><strong>Total:</strong> R$ {req.totalValue.toFixed(2)}</p>
+                                    <p><strong>Status:</strong> {req.status}</p>
+                                    {req.comments && <p><strong>Comentários:</strong> {req.comments}</p>}
+                                    <h4 className="font-semibold mt-2">Despesas:</h4>
+                                    {req.expenses.map((exp, index) => (
+                                        <div key={index} className="ml-4">
+                                            <p><strong>Tipo:</strong> {exp.type}</p>
+                                            {exp.type === 'kilometragem' ? (
+                                                <p><strong>Quilômetros:</strong> {exp.quantity}</p>
+                                            ) : null}
+                                            <p><strong>Valor:</strong> R$ {exp.value.toFixed(2)}</p>
+                                            <p><strong>Descrição:</strong> {exp.description}</p>
+                                            {exp.file && (
+                                                <p><strong>Fatura:</strong> <a href={exp.file} target="_blank">Ver Imagem</a></p>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        ReactDOM.render(<ReimbursementApp />, document.getElementById('root'));
+    </script>
+</body>
+</html>
