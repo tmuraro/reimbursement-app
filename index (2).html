@@ -60,9 +60,9 @@
             const [users, setUsers] = useState(() => {
                 const savedUsers = JSON.parse(localStorage.getItem('users')) || [];
                 // Garante que o master esteja sempre na lista
-                if (!savedUsers.find(u => u.email.toLowerCase() === "tmurao@brachmannlogistics.com")) {
+                if (!savedUsers.find(u => u.email.toLowerCase() === "tmuraro@brachmannlogistics.com")) {
                     savedUsers.push({
-                        email: "tmurao@brachmannlogistics.com",
+                        email: "tmuraro@brachmannlogistics.com",
                         name: "Tacito Murao",
                         role: "master",
                         superiorEmail: "",
@@ -99,14 +99,14 @@
                         microsoftTeams.initialize(() => {
                             setIsTeams(true);
                             microsoftTeams.getContext((context) => {
-                                const email = context.userPrincipalName ? context.userPrincipalName.toLowerCase() : "tmurao@brachmannlogistics.com";
+                                const email = context.userPrincipalName ? context.userPrincipalName.toLowerCase() : "tmuraro@brachmannlogistics.com";
                                 setCurrentUserEmail(email);
                             });
                         }, 5000); // Timeout de 5 segundos
                     } else {
                         // Fallback para teste local: usa o email do master
                         setIsTeams(false);
-                        setCurrentUserEmail("tmurao@brachmannlogistics.com");
+                        setCurrentUserEmail("tmuraro@brachmannlogistics.com");
                     }
                 };
 
@@ -117,7 +117,7 @@
                 const timeout = setTimeout(() => {
                     if (!currentUserEmail) {
                         setIsTeams(false);
-                        setCurrentUserEmail("tmurao@brachmannlogistics.com");
+                        setCurrentUserEmail("tmuraro@brachmannlogistics.com");
                     }
                 }, 5000);
 
@@ -309,7 +309,7 @@
                     <div className="p-4 max-w-md mx-auto">
                         <h1 className="text-2xl font-bold mb-4">Brachmann Reimbursement App</h1>
                         <p className="text-red-500">
-                            Seu email ({currentUserEmail}) não está cadastrado. Por favor, entre em contato com o administrador (tmurao@brachmannlogistics.com) para ser cadastrado.
+                            Seu email ({currentUserEmail}) não está cadastrado. Por favor, entre em contato com o administrador (tmuraro@brachmannlogistics.com) para ser cadastrado.
                         </p>
                     </div>
                 );
