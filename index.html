@@ -206,3 +206,412 @@
                     status: 'pending',
                     comments: '',
                     createdAt: new Date().toISOString() // Adiciona a data de criação
+                };
+                setRequests([...requests, newRequest]);
+
+                let emailBody = `
+                    <div>
+                        <h2>BRACHMANN WORLDWIDE LOGISTICS LTDA</h2>
+                        <h3>Nova Solicitação de Reembolso</h3>
+                        <p><strong>Data:</strong> ${new Date(newRequest.createdAt).toLocaleString()}</p>
+                        <p><strong>Solicitante:</strong> ${currentUserEmail}</p>
+                        <h4>Despesas:</h4>
+                        <table border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse;">
+                            <thead>
+                                <tr>
+                                    <th>Despesa</th>
+                                    <th>Tipo</th>
+                                    <th>Quilômetros</th>
+                                    <th>Valor</th>
+                                    <th>Descrição</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+                expenses.forEach((exp, index) => {
+                    emailBody += `
+                        <tr>
+                            <td>Despesa ${index + 1}</td>
+                            <td>${exp.type}</td>
+                            <td>${exp.type === 'kilometragem' ? exp.quantity : '-'}</td>
+                            <td>R$ ${exp.value.toFixed(2)}</td>
+                            <td>${exp.description}</td>
+                        </tr>
+                    `;
+                });
+                emailBody += `
+                            </tbody>
+                        </table>
+                        <p><strong>Total:</strong> R$ ${newRequest.totalValue.toFixed(2)}</p>
+                    </div>
+                `;
+
+                const superiorEmail = user.superiorEmail || "tmuraro@brachmannlogistics.com";
+                expenses.forEach(exp => {
+                    if (exp.fileRaw) {
+                        sendEmail(
+                            superiorEmail,
+                            `Nova Solicitação de Reembolso - ${currentUserEmail}`,
+                            emailBody,
+                            exp.fileRaw
+                        );
+                    } else {
+                        sendEmail(
+                            superiorEmail,
+                            `Nova Solicitação de Reembolso - ${currentUserEmail}`,
+                            emailBody
+                        );
+                    }
+                });
+
+                setExpenses([]);
+                setCurrentExpense({ type: 'kilometragem', quantity: 0, value: 0, description: '', file: null });
+                alert('Solicitação enviada para aprovação!');
+            };
+
+            // Manipula o cadastro de novos usuários (apenas para o master)
+            const handleUserSubmit = (e) => {
+                e.preventDefault();
+                if (users.find(u => u.email.toLowerCase() === newUser.email.toLowerCase())) {
+                    alert('Este email já está cadastrado!');
+                    return;
+                }
+                const newUserData = {
+                    email: newUser.email.toLowerCase(),
+                    name: newUser.name,
+                    role: newUser.role,
+                    superiorEmail: newUser.superiorEmail.toLowerCase(),
+                    kmRate: parseFloat(newUser.kmRate) || 0.50
+                };
+                setUsers([...users, newUserData]);
+                setNewUser({ email: '', name: '', role: 'employee', superiorEmail: '', kmRate: 0.50 });
+                alert('Usuário cadastrado com sucesso!');
+            };
+
+            // Manipula a edição de um usuário existente
+            const handleEditUser = (user) => {
+                setEditingUser(user);
+                setNewUser({
+                    email: user.email,
+                    name: user.name,
+                    role: user.role,
+                    superiorEmail: user.superiorEmail,
+                    kmRate: user.kmRate
+                });
+            };
+
+            // Manipula o salvamento das alterações de um usuário
+            const handleSaveEdit = (e) => {
+                e.preventDefault();
+                setUsers(users.map(u => {
+                    if (u.email.toLowerCase() === editingUser.email.toLowerCase()) {
+                        return {
+                            email: newUser.email.toLowerCase(),
+                            name: newUser.name,
+                            role: newUser.role,
+                            superiorEmail: newUser.superiorEmail.toLowerCase(),
+                            kmRate: parseFloat(newUser.kmRate) || 0.50
+                        };
+                    }
+                    return u;
+                }));
+                setEditingUser(null);
+                setNewUser({ email: '', name: '', role: 'employee', superiorEmail: '', kmRate: 0.50 });
+                alert('Usuário atualizado com sucesso!');
+            };
+
+            // Cancela a edição
+            const handleCancelEdit = () => {
+                setEditingUser(null);
+                setNewUser({ email: '', name: '', role: 'employee', superiorEmail: '', kmRate: 0.50 });
+            };
+
+            // Aprova ou rejeita uma solicitação
+            const handleApproval = (id, action, comments) => {
+                const request = requests.find(req => req.id === id);
+                const user = users.find(u => u.email === request.userEmail);
+                setRequests(requests.map(req => {
+                    if (req.id === id) {
+                        return {
+                            ...req,
+                            status: action === 'approve' ? 'approved' : 'rejected',
+                            comments: comments || req.comments,
+                            approvedBy: currentUserEmail // Adiciona o e-mail do aprovador
+                        };
+                    }
+                    return req;
+                }));
+
+                let emailBody = `
+                    <div>
+                        <h2>BRACHMANN WORLDWIDE LOGISTICS LTDA</h2>
+                        <h3>Atualização de Solicitação de Reembolso</h3>
+                        <p><strong>Data:</strong> ${new Date(request.createdAt).toLocaleString()}</p>
+                        <p><strong>Solicitante:</strong> ${request.userEmail}</p>
+                        <p><strong>Aprovador:</strong> ${currentUserEmail}</p>
+                        <h4>Despesas:</h4>
+                        <table border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse;">
+                            <thead>
+                                <tr>
+                                    <th>Despesa</th>
+                                    <th>Tipo</th>
+                                    <th>Quilômetros</th>
+                                    <th>Valor</th>
+                                    <th>Descrição</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+                request.expenses.forEach((exp, index) => {
+                    emailBody += `
+                        <tr>
+                            <td>Despesa ${index + 1}</td>
+                            <td>${exp.type}</td>
+                            <td>${exp.type === 'kilometragem' ? exp.quantity : '-'}</td>
+                            <td>R$ ${exp.value.toFixed(2)}</td>
+                            <td>${exp.description}</td>
+                        </tr>
+                    `;
+                });
+                emailBody += `
+                            </tbody>
+                        </table>
+                        <p><strong>Total:</strong> R$ ${request.totalValue.toFixed(2)}</p>
+                        <p><strong>Status:</strong> ${action === 'approve' ? 'Aprovada' : 'Rejeitada'}</p>
+                        ${comments ? `<p><strong>Comentários:</strong> ${comments}</p>` : ''}
+                    </div>
+                `;
+
+                if (action === 'approve') {
+                    request.expenses.forEach(exp => {
+                        if (exp.fileRaw) {
+                            sendEmail(
+                                "financeiro@brachmannlogistics.com",
+                                `Solicitação Aprovada - ${request.userEmail}`,
+                                emailBody,
+                                exp.fileRaw
+                            );
+                        } else {
+                            sendEmail(
+                                "financeiro@brachmannlogistics.com",
+                                `Solicitação Aprovada - ${request.userEmail}`,
+                                emailBody
+                            );
+                        }
+                    });
+                    alert('Solicitação aprovada! Enviada para o financeiro.');
+                } else {
+                    request.expenses.forEach(exp => {
+                        if (exp.fileRaw) {
+                            sendEmail(
+                                request.userEmail,
+                                `Solicitação Rejeitada - ${request.userEmail}`,
+                                emailBody,
+                                exp.fileRaw
+                            );
+                        } else {
+                            sendEmail(
+                                request.userEmail,
+                                `Solicitação Rejeitada - ${request.userEmail}`,
+                                emailBody
+                            );
+                        }
+                    });
+                    alert('Solicitação rejeitada.');
+                }
+            };
+
+            // Marca como pago pelo financeiro
+            const handlePayment = (id) => {
+                const request = requests.find(req => req.id === id);
+                setRequests(requests.map(req => {
+                    if (req.id === id) {
+                        return { ...req, status: 'paid' };
+                    }
+                    return req;
+                }));
+
+                let emailBody = `
+                    <div>
+                        <h2>BRACHMANN WORLDWIDE LOGISTICS LTDA</h2>
+                        <h3>Solicitação de Reembolso Marcada como Paga</h3>
+                        <p><strong>Data:</strong> ${new Date(request.createdAt).toLocaleString()}</p>
+                        <p><strong>Solicitante:</strong> ${request.userEmail}</p>
+                        <h4>Despesas:</h4>
+                        <table border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse;">
+                            <thead>
+                                <tr>
+                                    <th>Despesa</th>
+                                    <th>Tipo</th>
+                                    <th>Quilômetros</th>
+                                    <th>Valor</th>
+                                    <th>Descrição</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+                request.expenses.forEach((exp, index) => {
+                    emailBody += `
+                        <tr>
+                            <td>Despesa ${index + 1}</td>
+                            <td>${exp.type}</td>
+                            <td>${exp.type === 'kilometragem' ? exp.quantity : '-'}</td>
+                            <td>R$ ${exp.value.toFixed(2)}</td>
+                            <td>${exp.description}</td>
+                        </tr>
+                    `;
+                });
+                emailBody += `
+                            </tbody>
+                        </table>
+                        <p><strong>Total:</strong> R$ ${request.totalValue.toFixed(2)}</p>
+                        <p><strong>Status:</strong> Paga</p>
+                    </div>
+                `;
+
+                request.expenses.forEach(exp => {
+                    if (exp.fileRaw) {
+                        sendEmail(
+                            request.userEmail,
+                            `Solicitação Marcada como Paga - ${request.userEmail}`,
+                            emailBody,
+                            exp.fileRaw
+                        );
+                    } else {
+                        sendEmail(
+                            request.userEmail,
+                            `Solicitação Marcada como Paga - ${request.userEmail}`,
+                            emailBody
+                        );
+                    }
+                });
+
+                alert('Solicitação marcada como paga!');
+            };
+
+            // Obtém o superior do usuário atual
+            const getUserSuperior = (userEmail) => {
+                const user = users.find(u => u.email === userEmail);
+                return user ? user.superiorEmail : null;
+            };
+
+            // Filtra solicitações visíveis para o usuário atual
+            const getVisibleRequests = () => {
+                if (!currentUserEmail || !userRole) return [];
+                if (userRole === 'employee') {
+                    return requests.filter(req => req.userEmail === currentUserEmail);
+                } else if (userRole === 'manager') {
+                    return requests.filter(req => getUserSuperior(req.userEmail) === currentUserEmail && req.status === 'pending');
+                } else if (userRole === 'finance') {
+                    return requests.filter(req => req.status === 'approved');
+                } else if (userRole === 'master') {
+                    return requests;
+                }
+                return [];
+            };
+
+            // Se o usuário não estiver cadastrado, exibe uma mensagem
+            if (!currentUserEmail) {
+                return <div className="p-4">Inicializando aplicativo...</div>;
+            }
+
+            if (!userRole) {
+                return (
+                    <div className="p-4 max-w-md mx-auto">
+                        <h1 className="text-2xl font-bold mb-4">Brachmann Reimbursement App</h1>
+                        <p className="text-red-500">
+                            Seu email ({currentUserEmail}) não está cadastrado. Por favor, entre em contato com o administrador (tmuraro@brachmannlogistics.com) para ser cadastrado.
+                        </p>
+                    </div>
+                );
+            }
+
+            const user = users.find(u => u.email === currentUserEmail);
+
+            return (
+                <div className="p-4 max-w-4xl mx-auto">
+                    <h1 className="text-2xl font-bold mb-4">Brachmann Reimbursement App</h1>
+                    <p className="mb-4">Você está logado como: <strong>{user.role}</strong> (Email: {currentUserEmail})</p>
+                    <p className="mb-4 text-sm text-gray-500">
+                        {isTeams ? 'Rodando no Microsoft Teams' : 'Rodando localmente (simulação)'}
+                    </p>
+
+                    {/* Notificações */}
+                    {notifications.length > 0 && (
+                        <div className="mb-4 p-4 border rounded-lg bg-yellow-100">
+                            <h3 className="text-lg font-semibold mb-2">Notificações</h3>
+                            {notifications.map((notif, index) => (
+                                <p key={index} className="text-sm">{notif}</p>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Cadastro de Usuários (apenas para o master) */}
+                    {user.role === 'master' && (
+                        <div className="mb-6 p-4 border rounded-lg">
+                            <h2 className="text-xl font-semibold mb-2">{editingUser ? 'Editar Usuário' : 'Cadastrar Novo Usuário'}</h2>
+                            <form onSubmit={editingUser ? handleSaveEdit : handleUserSubmit}>
+                                <div className="mb-4">
+                                    <label className="block mb-1">Email:</label>
+                                    <input
+                                        type="email"
+                                        value={newUser.email}
+                                        onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                                        className="border p-2 rounded w-full"
+                                        disabled={!!editingUser}
+                                        required
+                                    />
+                                </div>
+                                <div className="mb-4">
+                                    <label className="block mb-1">Nome:</label>
+                                    <input
+                                        type="text"
+                                        value={newUser.name}
+                                        onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
+                                        className="border p-2 rounded w-full"
+                                        required
+                                    />
+                                </div>
+                                <div className="mb-4">
+                                    <label className="block mb-1">Papel:</label>
+                                    <select
+                                        value={newUser.role}
+                                        onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
+                                        className="border p-2 rounded w-full"
+                                    >
+                                        <option value="employee">Funcionário</option>
+                                        <option value="manager">Gestor</option>
+                                        <option value="finance">Financeiro</option>
+                                        <option value="master">Master</option>
+                                    </select>
+                                </div>
+                                <div className="mb-4">
+                                    <label className="block mb-1">Superior (Email):</label>
+                                    <select
+                                        value={newUser.superiorEmail}
+                                        onChange={(e) => setNewUser({ ...newUser, superiorEmail: e.target.value })}
+                                        className="border p-2 rounded w-full"
+                                    >
+                                        <option value="">Nenhum</option>
+                                        {users.filter(u => u.role === 'manager').map(u => (
+                                            <option key={u.email} value={u.email}>{u.name} ({u.email})</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="mb-4">
+                                    <label className="block mb-1">Valor por KM (R$):</label>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        value={newUser.kmRate}
+                                        onChange={(e) => setNewUser({ ...newUser, kmRate: e.target.value })}
+                                        className="border p-2 rounded w-full"
+                                        required
+                                    />
+                                </div>
+                                <div className="flex space-x-2">
+                                    <button type="submit" className="bg-blue-500 text-white px-4 py-2 rounded">
+                                        {editingUser ? 'Salvar Alterações' : 'Cadastrar Usuário'}
+                                    </button>
+                                    W {editingUser && (
+                                        <button
